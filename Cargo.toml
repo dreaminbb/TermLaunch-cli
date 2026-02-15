@@ -3,7 +3,17 @@ name = "TermLaunch-cli"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "TermLaunch-cli"
+path = "src/main.rs"
+
+[[bin]]
+name = "termlaunch-daemon"
+path = "src/daemon.rs"
+
 [dependencies]
 crossterm = "0.29.0"
 meval = "0.2.0"
 ratatui = "0.30.0"
+rdev = "0.5.3"
+lazy_static = "1.4.0"
