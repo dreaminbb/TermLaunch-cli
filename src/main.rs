@@ -13,7 +13,7 @@ use ratatui::{
 };
 use std::{
     io::{self, Stdout, stdout},
-    process::Command,
+    process::{Command, Stdio},
 };
 
 struct App {
@@ -31,8 +31,8 @@ enum Suggestion {
 #[derive(Clone)]
 struct Application {
     name: String,
-    command: String,
     icon: String,
+    path: String,
 }
 
 impl App {
@@ -108,11 +108,13 @@ fn get_applications() -> Vec<Application> {
                 if path.extension().map_or(false, |ext| ext == "app") {
                     if let Some(app_name_os) = path.file_stem() {
                         let app_name = app_name_os.to_string_lossy().into_owned();
-                        apps.push(Application {
-                            name: app_name.clone(),
-                            command: format!("open -a \"{}\"", app_name),
-                            icon: "".to_string(), // Generic app icon
-                        });
+                        if let Some(path_str) = path.to_str() {
+                            apps.push(Application {
+                                name: app_name.clone(),
+                                icon: "".to_string(), // Generic app icon
+                                path: path_str.to_string(),
+                            });
+                        }
                     }
                 }
             }
@@ -159,15 +161,13 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut App) -> 
                 KeyCode::Enter => {
                     if let Some(suggestion) = app.suggestions.get(app.selected_index) {
                         if let Suggestion::App(selected_app) = suggestion {
-                            let parts: Vec<&str> = selected_app.command.splitn(3, ' ').collect();
-                            if parts.len() == 3 && parts[0] == "open" && parts[1] == "-a" {
-                                let app_name_with_quotes = parts[2];
-                                let app_name = app_name_with_quotes.trim_matches('"');
-                                Command::new("open").arg("-a").arg(app_name).spawn()?;
-                            } else {
-                                // Fallback for commands not matching the "open -a" format
-                                Command::new(&selected_app.command).spawn()?;
-                            }
+                            let status_result = Command::new("open")
+                                .arg(&selected_app.path)
+                                .stdin(Stdio::null())
+                                .stdout(Stdio::null())
+                                .stderr(Stdio::null())
+                                .status();
+
                             return Ok(());
                         }
                     }

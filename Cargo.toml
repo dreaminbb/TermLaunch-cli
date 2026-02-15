@@ -8,7 +8,7 @@ name = "TermLaunch-cli"
 path = "src/main.rs"
 
 [[bin]]
-name = "Termlaunch-daemon"
+name = "TermLaunch-daemon"
 path = "src/daemon.rs"
 
 [dependencies]
