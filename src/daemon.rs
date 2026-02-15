@@ -1,8 +1,14 @@
+use core_graphics::display::CGDisplay;
 use rdev::{Event, EventType, Key, listen};
 use std::collections::HashSet;
 use std::env;
 use std::process::Command;
 use std::sync::{Arc, Mutex};
+
+const GHOSTTY_DEFAULT_WIDTH: f64 = 600.0;
+const GHOSTTY_DEFAULT_HEIGHT: f64 = 400.0;
+const GHOSTTY_DEFAULT_COLUMNS: i32 = 100;
+const GHOSTTY_DEFAULT_ROWS: i32 = 30;
 
 fn main() {
     println!("Starting TermLaunch daemon to listen for Cmd+Space...");
@@ -51,11 +57,24 @@ fn check_hotkey(pressed_keys: &HashSet<Key>) {
 }
 
 fn open_in_ghostty(command_path: &str) {
+    let main_display = CGDisplay::main();
+    let main_display_bounds = main_display.bounds();
+
+    let screen_width = main_display_bounds.size.width;
+    let screen_height = main_display_bounds.size.height;
+
+    let pos_x = (screen_width - GHOSTTY_DEFAULT_WIDTH) / 2.0;
+    let pos_y = (screen_height - GHOSTTY_DEFAULT_HEIGHT) / 2.0;
+
     let status = Command::new("open")
         .arg("-a")
         .arg("ghostty")
         .arg("-n") // Open a new instance
         .arg("--args")
+        .arg(format!("--window-position-x={}", pos_x as i32))
+        .arg(format!("--window-position-y={}", pos_y as i32))
+        .arg(format!("--window-width={}", GHOSTTY_DEFAULT_COLUMNS))
+        .arg(format!("--window-height={}", GHOSTTY_DEFAULT_ROWS))
         .arg("-e") // Assume -e flag for executing a command
         .arg(command_path)
         .status();

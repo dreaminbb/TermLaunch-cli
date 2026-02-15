@@ -6,7 +6,7 @@ use crossterm::{
 use ratatui::{
     Frame, Terminal,
     backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, Paragraph},
@@ -179,6 +179,22 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut App) -> 
 }
 
 fn ui(f: &mut Frame, app: &App) {
+    let parent_area = f.area();
+
+    // Define the maximum desired fixed size for the launcher content
+    let max_width = 80;
+    let max_height = 20;
+
+    // The actual width/height will be the smaller of the max size and the terminal size
+    let actual_width = parent_area.width.min(max_width);
+    let actual_height = parent_area.height.min(max_height);
+
+    // Calculate the top-left corner to center the desired area
+    let x = (parent_area.width.saturating_sub(actual_width)) / 2;
+    let y = (parent_area.height.saturating_sub(actual_height)) / 2;
+
+    let centered_area = Rect::new(x, y, actual_width, actual_height);
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(1)
@@ -189,7 +205,7 @@ fn ui(f: &mut Frame, app: &App) {
             ]
             .as_ref(),
         )
-        .split(f.area());
+        .split(centered_area);
 
     let input = Paragraph::new(app.input.as_str())
         .block(Block::default().borders(Borders::ALL).title("Input"));

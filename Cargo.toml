@@ -8,7 +8,7 @@ name = "TermLaunch-cli"
 path = "src/main.rs"
 
 [[bin]]
-name = "termlaunch-daemon"
+name = "Termlaunch-daemon"
 path = "src/daemon.rs"
 
 [dependencies]
@@ -17,3 +17,4 @@ meval = "0.2.0"
 ratatui = "0.30.0"
 rdev = "0.5.3"
 lazy_static = "1.4.0"
+core-graphics = "0.21.0"

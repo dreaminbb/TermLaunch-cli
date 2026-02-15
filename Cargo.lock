@@ -6,6 +6,7 @@ version = 4
 name = "TermLaunch-cli"
 version = "0.1.0"
 dependencies = [
+ "core-graphics 0.21.0",
  "crossterm",
  "lazy_static",
  "meval",
