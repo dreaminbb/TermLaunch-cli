@@ -1,15 +1,14 @@
+mod theme;
+
+use crate::theme::{BG, BORDER_ACTIVE, FG, SELECTION_BG, SELECTION_FG};
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{
-    Frame, Terminal,
-    backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
-    text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph},
+    prelude::*,
+    widgets::{Block, BorderType, Borders, Clear, List, ListItem, Paragraph},
 };
 use std::{
     io::{self, Stdout, stdout},
@@ -60,7 +59,8 @@ impl App {
                 }
             }
             KeyCode::Down => {
-                if self.selected_index < self.suggestions.len() - 1 {
+                if !self.suggestions.is_empty() && self.selected_index < self.suggestions.len() - 1
+                {
                     self.selected_index += 1;
                 }
             }
@@ -70,6 +70,11 @@ impl App {
 
     fn update_suggestions(&mut self) {
         self.suggestions.clear();
+        if self.input.is_empty() {
+            self.selected_index = 0;
+            return;
+        }
+
         let apps = get_applications();
         for app in apps {
             if app.name.to_lowercase().contains(&self.input.to_lowercase()) {
@@ -78,16 +83,15 @@ impl App {
         }
 
         // Only add calculation if there are no app suggestions
-        if self.suggestions.is_empty() && !self.input.is_empty() {
+        if self.suggestions.is_empty() {
             if let Ok(result) = meval::eval_str(&self.input) {
-                self.suggestions.push(Suggestion::Calc(result.to_string()));
+                if result.is_finite() {
+                    self.suggestions.push(Suggestion::Calc(result.to_string()));
+                }
             }
         }
 
         self.selected_index = 0;
-        if !self.suggestions.is_empty() {
-            self.selected_index = 0;
-        }
     }
 }
 
@@ -111,7 +115,7 @@ fn get_applications() -> Vec<Application> {
                         if let Some(path_str) = path.to_str() {
                             apps.push(Application {
                                 name: app_name.clone(),
-                                icon: "".to_string(), // Generic app icon
+                                icon: "".to_string(), // Nerd Font icon for desktop
                                 path: path_str.to_string(),
                             });
                         }
@@ -157,17 +161,21 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut App) -> 
 
         if let Event::Key(key) = event::read()? {
             match key.code {
-                KeyCode::Char('q') => return Ok(()),
+                KeyCode::Esc | KeyCode::Char('q') => return Ok(()),
                 KeyCode::Enter => {
                     if let Some(suggestion) = app.suggestions.get(app.selected_index) {
                         if let Suggestion::App(selected_app) = suggestion {
-                            let status_result = Command::new("open")
+                            // Before exiting, restore the terminal to a clean state
+                            restore_terminal(terminal)?;
+
+                            Command::new("open")
                                 .arg(&selected_app.path)
                                 .stdin(Stdio::null())
                                 .stdout(Stdio::null())
                                 .stderr(Stdio::null())
-                                .status();
+                                .status()?; // Use status() to wait for command to be issued
 
+                            // We exit the TUI app after launching the selected application.
                             return Ok(());
                         }
                     }
@@ -179,66 +187,99 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut App) -> 
 }
 
 fn ui(f: &mut Frame, app: &App) {
-    let parent_area = f.area();
+    let area = f.area(); // Corrected: f.size() is deprecated, use f.area()
 
-    // Define the maximum desired fixed size for the launcher content
-    let max_width = 80;
-    let max_height = 20;
+    // Define a centered area for the launcher
+    // default widht is 600 height is 400
+    // It's also written in src/daemon.rs
+    let launcher_width = 100;
+    let suggestions_height = 100;
+    let launcher_height = 3 + suggestions_height; // 1 for border, 1 for input, 1 for border, + suggestions
 
-    // The actual width/height will be the smaller of the max size and the terminal size
-    let actual_width = parent_area.width.min(max_width);
-    let actual_height = parent_area.height.min(max_height);
+    let area = centered_rect(launcher_width, launcher_height, area);
 
-    // Calculate the top-left corner to center the desired area
-    let x = (parent_area.width.saturating_sub(actual_width)) / 2;
-    let y = (parent_area.height.saturating_sub(actual_height)) / 2;
+    // Clear the area before drawing to handle dynamic height
+    f.render_widget(Clear, area);
 
-    let centered_area = Rect::new(x, y, actual_width, actual_height);
+    let main_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(BORDER_ACTIVE))
+        .style(Style::default().bg(BG));
+
+    let inner_area = main_block.inner(area);
+    f.render_widget(main_block, area);
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .margin(1)
-        .constraints(
-            [
-                Constraint::Length(3), // For input
-                Constraint::Min(0),    // For suggestions
-            ]
-            .as_ref(),
-        )
-        .split(centered_area);
+        .constraints([Constraint::Length(1), Constraint::Min(0)].as_ref())
+        .split(inner_area);
 
-    let input = Paragraph::new(app.input.as_str())
-        .block(Block::default().borders(Borders::ALL).title("Input"));
-    f.render_widget(input, chunks[0]);
+    // --- Input Line ---
+    let input_line = Line::from(vec![
+        Span::styled("❯ ", Style::default().fg(BORDER_ACTIVE)),
+        Span::styled(app.input.as_str(), Style::default().fg(FG)),
+    ]);
+    let input_paragraph = Paragraph::new(input_line);
+    f.render_widget(input_paragraph, chunks[0]);
 
+    // --- Suggestions List ---
     let suggestions: Vec<ListItem> = app
         .suggestions
         .iter()
         .enumerate()
         .map(|(i, suggestion)| {
-            let (icon, text) = match suggestion {
-                Suggestion::App(app) => (app.icon.clone(), app.name.clone()),
-                Suggestion::Calc(res) => ("".to_string(), format!("= {}", res)),
+            // Corrected: Ensure both match arms return the same type (&str, &str)
+            let (icon, text): (&str, &str) = match suggestion {
+                Suggestion::App(app) => (app.icon.as_str(), app.name.as_str()),
+                Suggestion::Calc(res) => ("", res.as_str()),
             };
 
-            let content = Line::from(vec![Span::raw(icon), Span::raw(" "), Span::raw(text)]);
-            let mut list_item = ListItem::new(content);
+            let content = Line::from(vec![
+                Span::styled(format!("{} ", icon), Style::default().fg(SELECTION_FG)),
+                // Corrected: `text` is now a `&str`, no clone needed.
+                Span::raw(text),
+            ]);
+
+            let mut list_item = ListItem::new(content).style(Style::default().fg(FG));
 
             if i == app.selected_index {
-                list_item = list_item.style(Style::default().fg(Color::Black).bg(Color::White));
+                list_item = list_item.style(
+                    Style::default()
+                        .bg(SELECTION_BG)
+                        .fg(FG)
+                        .add_modifier(Modifier::BOLD),
+                );
             }
             list_item
         })
         .collect();
 
-    let suggestions_list = List::new(suggestions)
-        .block(Block::default().borders(Borders::ALL).title("Suggestions"))
-        .highlight_style(
-            Style::default()
-                .add_modifier(Modifier::BOLD)
-                .fg(Color::Yellow),
-        )
-        .highlight_symbol("> ");
-
+    let suggestions_list = List::new(suggestions);
     f.render_widget(suggestions_list, chunks[1]);
+}
+
+/// Helper function to create a centered rect with a max width and dynamic height
+fn centered_rect(percent_x: u16, height: u16, r: Rect) -> Rect {
+    let popup_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage(15), // 15% from top
+            Constraint::Min(height),
+            Constraint::Max(
+                r.height
+                    .saturating_sub(height)
+                    .saturating_sub(r.height / 10),
+            ), // flexible bottom margin
+        ])
+        .split(r);
+
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage((100 - percent_x) / 2),
+            Constraint::Percentage(percent_x),
+            Constraint::Percentage((100 - percent_x) / 2),
+        ])
+        .split(popup_layout[1])[1]
 }
