@@ -9,6 +9,8 @@ use std::sync::{Arc, Mutex};
 mod config;
 use crate::config::CONFIG; // Now CONFIG is correctly imported
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
 fn main() {
     // Print loaded config in debug builds
     #[cfg(debug_assertions)]
@@ -25,14 +27,14 @@ fn main() {
     println!("Please ensure Accessibility permissions are granted.");
 
     let pressed_keys = Arc::new(Mutex::new(HashSet::new()));
-    let pressed_keys_clone = Arc::clone(&pressed_keys);
+    let is_tui_running = Arc::new(AtomicBool::new(false)); // Lock to prevent multiple instances
 
     if let Err(error) = listen(move |event: Event| {
-        let mut keys = pressed_keys_clone.lock().unwrap();
+        let mut keys = pressed_keys.lock().unwrap();
         match event.event_type {
             EventType::KeyPress(key) => {
                 keys.insert(key);
-                check_hotkey(&keys);
+                check_hotkey(&keys, Arc::clone(&is_tui_running));
             }
             EventType::KeyRelease(key) => {
                 keys.remove(&key);
@@ -66,11 +68,19 @@ fn map_main_key_str_to_key(key_str: &str) -> Option<Key> {
     }
 }
 
-fn check_hotkey(pressed_keys: &HashSet<Key>) {
+fn check_hotkey(pressed_keys: &HashSet<Key>, is_tui_running: Arc<AtomicBool>) {
     let mut all_modifiers_are_pressed = true;
     for modifier_str in &CONFIG.hotkey.modifiers {
         if let Some(rdev_key) = map_modifier_str_to_key(modifier_str) {
-            if !pressed_keys.contains(&rdev_key) {
+            // Check for both left and right variants of the modifier key
+            let (left_variant, right_variant) = match rdev_key {
+                Key::MetaLeft => (Key::MetaLeft, Key::MetaRight),
+                Key::ControlLeft => (Key::ControlLeft, Key::ControlRight),
+                Key::ShiftLeft => (Key::ShiftLeft, Key::ShiftRight),
+                Key::Alt => (Key::Alt, Key::AltGr),
+                _ => (rdev_key, rdev_key),
+            };
+            if !pressed_keys.contains(&left_variant) && !pressed_keys.contains(&right_variant) {
                 all_modifiers_are_pressed = false;
                 break;
             }
@@ -89,30 +99,40 @@ fn check_hotkey(pressed_keys: &HashSet<Key>) {
     };
 
     if all_modifiers_are_pressed && main_key_is_pressed {
-        println!("Hotkey detected! Launching TermLaunch-cli in configured terminal...");
+        // Attempt to acquire the lock. If it's already true, do nothing.
+        if is_tui_running.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
+            println!("Hotkey detected! Launching TermLaunch-cli in configured terminal...");
 
-        if let Ok(mut current_exe) = env::current_exe() {
-            current_exe.pop(); // Navigate to parent dir (/target/debug/ or /target/release/)
-            let tui_path = current_exe.join("TermLaunch-cli");
-            if let Some(path_str) = tui_path.to_str() {
-                open_in_configured_terminal(path_str);
+            if let Ok(mut current_exe) = env::current_exe() {
+                current_exe.pop(); // Navigate to parent dir (/target/debug/ or /target/release/)
+                let tui_path = current_exe.join("TermLaunch-cli");
+                if let Some(path_str) = tui_path.to_str() {
+                    open_in_configured_terminal(path_str);
+                } else {
+                    eprintln!("Failed to convert TUI path to string.");
+                }
             } else {
-                eprintln!("Failed to convert TUI path to string.");
+                eprintln!("Could not determine the path of the current executable.");
             }
+
+            // After the terminal process has finished, release the lock.
+            is_tui_running.store(false, Ordering::SeqCst);
+            println!("TUI closed. Ready for next hotkey.");
         } else {
-            eprintln!("Could not determine the path of the current executable.");
+            println!("[INFO] TermLaunch is already running. Ignoring hotkey.");
         }
     }
 }
 
-fn open_in_configured_terminal(command_path: &str) {
+// --- Terminal Opening Logic ---
+
+fn open_with_ghostty(command_path: &str) -> std::io::Result<std::process::ExitStatus> {
     let main_display = CGDisplay::main();
     let main_display_bounds = main_display.bounds();
 
     let screen_width = main_display_bounds.size.width;
     let screen_height = main_display_bounds.size.height;
 
-    // Use configured terminal dimensions
     let terminal_width = CONFIG.primary_terminal.default_width as f64;
     let terminal_height = CONFIG.primary_terminal.default_height as f64;
     let terminal_columns = CONFIG.primary_terminal.default_columns;
@@ -121,39 +141,95 @@ fn open_in_configured_terminal(command_path: &str) {
     let pos_x = (screen_width - terminal_width) / 2.0;
     let pos_y = (screen_height - terminal_height) / 2.0;
 
-    // TODO: Change method of opening terminal depends on terminal app. It works only ghostty
-
-    let status = Command::new("open")
+    Command::new("open")
         .arg("-a")
-        .arg(&CONFIG.primary_terminal.terminal) // Use configured terminal name (e.g., "Ghostty", "Terminal")
+        .arg("Ghostty")
         .arg("-n") // Open a new instance
         .arg("--args")
         .arg(format!("--window-position-x={}", pos_x as i32))
         .arg(format!("--window-position-y={}", pos_y as i32))
         .arg(format!("--window-width={}", terminal_columns))
         .arg(format!("--window-height={}", terminal_rows))
-        .arg("-e") // Assume -e flag for executing a command
-        .arg(command_path)
-        .status();
+        .arg("-e") // Tell Ghostty to execute a shell
+        .arg("sh")
+        .arg("-c")
+        .arg(format!("\"{}\"; exit", command_path)) // The shell runs the command, then exits
+        .status()
+}
 
-    match status {
+fn open_with_default_terminal(command_path: &str) -> std::io::Result<std::process::ExitStatus> {
+    let main_display = CGDisplay::main();
+    let main_display_bounds = main_display.bounds();
+
+    let screen_width = main_display_bounds.size.width;
+    let screen_height = main_display_bounds.size.height;
+
+    // Preserving user's custom size calculations as per their feedback.
+    let terminal_width = CONFIG.primary_terminal.default_width as f64 * 3.0;
+    let terminal_height = CONFIG.primary_terminal.default_height as f64 * 2.5;
+
+    let x1 = (screen_width - terminal_width) / 2.0;
+    let y1 = (screen_height - terminal_height) / 2.0;
+    let x2 = x1 + terminal_width;
+    let y2 = y1 + terminal_height;
+
+    // A more robust AppleScript that creates the window first, then activates and modifies it.
+    let script = format!(
+        r#"
+        tell application "Terminal"
+            -- 1. Create the window by running the script. This returns a reference to the tab.
+            set term_tab to do script quoted form of "{}"
+            
+            -- 2. Activate the application to bring it to the front.
+            activate
+            
+            -- 3. Now that it's frontmost, set its bounds.
+            tell front window to set its bounds to {{ {}, {}, {}, {} }}
+            
+            -- 4. Poll until the command in the tab is no longer busy.
+            repeat while busy of term_tab
+                delay 0.2
+            end repeat
+            
+            -- 5. Once the command is done, close the window.
+            close front window
+        end tell
+        "#,
+        command_path, x1 as i32, y1 as i32, x2 as i32, y2 as i32,
+    );
+
+    Command::new("osascript").arg("-e").arg(&script).status()
+}
+
+fn open_in_configured_terminal(command_path: &str) {
+    let terminal_name = &CONFIG.primary_terminal.terminal;
+
+    // Dispatch to the correct function based on the configured terminal name.
+    // Using a simple if/else for now as per instructions.
+    let status_result = match terminal_name.as_str() {
+        "Ghostty" => open_with_ghostty(command_path),
+        "Terminal" => open_with_default_terminal(command_path),
+        unsupported => {
+            println!(
+                "Unsupported terminal in config: '{}'. Falling back to default Terminal.app.",
+                unsupported
+            );
+            open_with_default_terminal(command_path)
+        }
+    };
+
+    match status_result {
         Ok(status) if status.success() => {
             println!(
                 "Successfully launched {} with TermLaunch-cli.",
-                CONFIG.primary_terminal.terminal
+                terminal_name
             );
         }
         Ok(status) => {
-            eprintln!(
-                "{} process exited with status {}.",
-                CONFIG.primary_terminal.terminal, status
-            );
+            eprintln!("{} process exited with status {}.", terminal_name, status);
         }
         Err(e) => {
-            eprintln!(
-                "Failed to execute 'open' command for {}: {}",
-                CONFIG.primary_terminal.terminal, e
-            );
+            eprintln!("Failed to launch terminal '{}': {}", terminal_name, e);
         }
     }
 }
