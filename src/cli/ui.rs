@@ -4,16 +4,15 @@ use ratatui::{
     prelude::*,
     widgets::{Block, BorderType, Borders, Clear, List, ListItem, Paragraph},
 };
+use crate::config::CONFIG; // Import CONFIG
 
 pub fn ui(f: &mut Frame, app: &App) {
     let area = f.area(); // Corrected: f.size() is deprecated, use f.area()
 
     // Define a centered area for the launcher
-    // default widht is 600 height is 400
-    // It's also written in src/daemon.rs
-    let launcher_width = 100;
-    let suggestions_height = 100;
-    let launcher_height = 3 + suggestions_height; // 1 for border, 1 for input, 1 for border, + suggestions
+    let launcher_width = CONFIG.ui.launcher_width;
+    let suggestions_to_display = (app.suggestions.len() as u16).min(CONFIG.ui.max_suggestions_to_display);
+    let launcher_height = 3 + suggestions_to_display; // 1 for border, 1 for input, 1 for border, + suggestions
 
     let area = centered_rect(launcher_width, launcher_height, area);
 
@@ -28,6 +27,8 @@ pub fn ui(f: &mut Frame, app: &App) {
 
     let inner_area = main_block.inner(area);
     f.render_widget(main_block, area);
+    // Rest of the code ...
+
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)

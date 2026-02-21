@@ -1,5 +1,8 @@
 use std::io;
 
+mod config;
+use crate::config::CONFIG;
+
 mod cli;
 
 // TODO: TermLaunch Development Roadmap
@@ -8,7 +11,6 @@ mod cli;
 // - [ ] 設定ファイル管理 (config.toml): ホットキーや各機能の有効/無効などを管理
 // - [ ] エラーロギング: デバッグ用にファイルにエラーを記録
 // - [ ] UIの非同期処理化: ファイル検索などでUIが固まらないようにする
-
 // --- 2. ✨ Core Features (中核機能) ---
 // - [ ] 計算機能の強化: 単位・通貨換算に対応
 // - [ ] ファイル検索 (+プレビュー, パスをコピーなどのアクション)
@@ -27,6 +29,12 @@ mod cli;
 
 // NOTE: 新機能は、原則として設定ファイルで有効/無効を切り替えられるように実装する。
 fn main() -> io::Result<()> {
+    // Print loaded config in debug builds
+    #[cfg(debug_assertions)]
+    {
+        println!("[DEBUG] Loaded CLI Config: {:#?}", *CONFIG);
+    }
+
     let mut terminal = cli::terminal::setup_terminal()?;
     let mut app = cli::app::App::new();
     cli::runner::run_app(&mut terminal, &mut app)?;

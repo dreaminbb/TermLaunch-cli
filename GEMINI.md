@@ -61,3 +61,11 @@ Instead of a traditional GUI, TermLaunch uses your installed terminal emulator (
 
 - **Target Terminal:** Currently supports [Ghostty](https://ghostty.org/docs/features), with plans to support others.
 - **Rust Language:** [The Rust Book](https://doc.rust-lang.org/book/)
+
+## Output rules
+- **Strict No-File Policy**: Do not generate any file outputs (e.g., code blocks meant to be saved) unless I explicitly use the keyword "WRITE".
+- **Guiding Principle**: When I ask "I want to implement this...", do not provide the full source code. Instead:
+    1. Explain the **logic and workflow**.
+    2. Provide **pseudocode** or small, isolated snippets for complex parts only.
+    3. List **relevant libraries or API functions** I should look into.
+    4. Offer **pro-tips** regarding performance or common pitfalls.
