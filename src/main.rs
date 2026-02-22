@@ -3,12 +3,14 @@ use std::io;
 mod config;
 use crate::config::CONFIG;
 
-mod cli;
+mod app_logger;
+mod cli; // Changed from `mod log;`
+use log; // The external log crate
 
 // TODO: TermLaunch Development Roadmap
 
 // --- 1. ⚡ Foundation (最優先の基盤機能) ---
-// - [ ] 設定ファイル管理 (config.toml): ホットキーや各機能の有効/無効などを管理
+// - [*] 設定ファイル管理 (config.toml): ホットキーや各機能の有効/無効などを管理
 // - [ ] エラーロギング: デバッグ用にファイルにエラーを記録
 // - [ ] UIの非同期処理化: ファイル検索などでUIが固まらないようにする
 // --- 2. ✨ Core Features (中核機能) ---
@@ -29,10 +31,12 @@ mod cli;
 
 // NOTE: 新機能は、原則として設定ファイルで有効/無効を切り替えられるように実装する。
 fn main() -> io::Result<()> {
+    app_logger::init_logger("cli").expect("Failed to initialize logger"); // Changed to app_logger
+
     // Print loaded config in debug builds
     #[cfg(debug_assertions)]
     {
-        println!("[DEBUG] Loaded CLI Config: {:#?}", *CONFIG);
+        log::info!("[DEBUG] Loaded CLI Config: {:#?}", *CONFIG); // Changed to log::info!
     }
 
     let mut terminal = cli::terminal::setup_terminal()?;

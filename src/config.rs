@@ -16,7 +16,6 @@ pub const CONFIG_SUBDIR: &str = ".config/TermLaunch";
 // The name of the configuration file
 pub const CONFIG_FILE_NAME: &str = "init.toml";
 
-
 // Statically computes the config directory path on first use
 pub static CONFIG_DIR_PATH: Lazy<PathBuf> = Lazy::new(|| {
     home::home_dir()

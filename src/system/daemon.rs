@@ -4,6 +4,8 @@ use std::collections::HashSet;
 use std::env;
 use std::process::Command;
 use std::sync::{Arc, Mutex};
+// Removed local fs imports, as they are now in cli::log
+// use std::fs::{File, create_dir_all};
 
 #[path = "../config.rs"]
 mod config;
@@ -11,25 +13,37 @@ use crate::config::CONFIG; // Now CONFIG is correctly imported
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
+// Removed local dirs, log, simplelog imports, as they are now in cli::log
+// use dirs;
+// use log::{error, info, warn};
+// use simplelog::{Config as SimplelogConfig, LevelFilter, WriteLogger};
+
+// Add shared logger module
+#[path = "../app_logger.rs"] // Corrected path
+mod app_logger;
+
+// Removed init_logger function as it is now shared in cli::log
+
 fn main() {
+    app_logger::init_logger("daemon").expect("Failed to initialize logger"); // Call shared logger
+
     // Print loaded config in debug builds
     #[cfg(debug_assertions)]
     {
-        println!("[DEBUG] Loaded Daemon Config: {:#?}", *CONFIG);
+        log::info!("[DEBUG] Loaded Daemon Config: {:#?}", *CONFIG); // Changed to log::info!
+        log::info!("Starting TermLaunch daemon to listen for hotkey...");
+        log::info!("Please ensure Accessibility permissions are granted.");
+        log::info!(
+            "Configured hotkey: {} + {}",
+            CONFIG.hotkey.modifiers.join(" + "),
+            CONFIG.hotkey.key
+        );
     }
-
-    println!("Starting TermLaunch daemon to listen for hotkey...");
-    println!(
-        "Configured hotkey: {} + {}",
-        CONFIG.hotkey.modifiers.join(" + "),
-        CONFIG.hotkey.key
-    );
-    println!("Please ensure Accessibility permissions are granted.");
 
     let pressed_keys = Arc::new(Mutex::new(HashSet::new()));
     let is_tui_running = Arc::new(AtomicBool::new(false)); // Lock to prevent multiple instances
 
-    if let Err(error) = listen(move |event: Event| {
+    if let Err(err) = listen(move |event: Event| {
         let mut keys = pressed_keys.lock().unwrap();
         match event.event_type {
             EventType::KeyPress(key) => {
@@ -42,7 +56,8 @@ fn main() {
             _ => (),
         }
     }) {
-        eprintln!("Error listening for events: {:?}", error);
+        log::error!("Error listening for events: {:?}", err);
+        log::info!("Please ensure Accessibility permissions are granted.");
     }
 }
 
@@ -85,7 +100,7 @@ fn check_hotkey(pressed_keys: &HashSet<Key>, is_tui_running: Arc<AtomicBool>) {
                 break;
             }
         } else {
-            eprintln!("Unknown modifier key in config: {}", modifier_str);
+            log::warn!("Unknown modifier key in config: {}", modifier_str);
             all_modifiers_are_pressed = false;
             break;
         }
@@ -94,14 +109,16 @@ fn check_hotkey(pressed_keys: &HashSet<Key>, is_tui_running: Arc<AtomicBool>) {
     let main_key_is_pressed = if let Some(rdev_key) = map_main_key_str_to_key(&CONFIG.hotkey.key) {
         pressed_keys.contains(&rdev_key)
     } else {
-        eprintln!("Unknown main hotkey in config: {}", CONFIG.hotkey.key);
+        log::warn!("Unknown main hotkey in config: {}", CONFIG.hotkey.key);
         false
     };
 
     if all_modifiers_are_pressed && main_key_is_pressed {
-        // Attempt to acquire the lock. If it's already true, do nothing.
-        if is_tui_running.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
-            println!("Hotkey detected! Launching TermLaunch-cli in configured terminal...");
+        if is_tui_running
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+        {
+            log::info!("Hotkey detected! Launching TermLaunch-cli in configured terminal...");
 
             if let Ok(mut current_exe) = env::current_exe() {
                 current_exe.pop(); // Navigate to parent dir (/target/debug/ or /target/release/)
@@ -109,17 +126,17 @@ fn check_hotkey(pressed_keys: &HashSet<Key>, is_tui_running: Arc<AtomicBool>) {
                 if let Some(path_str) = tui_path.to_str() {
                     open_in_configured_terminal(path_str);
                 } else {
-                    eprintln!("Failed to convert TUI path to string.");
+                    log::error!("Failed to convert TUI path to string.");
                 }
             } else {
-                eprintln!("Could not determine the path of the current executable.");
+                log::error!("Could not determine the path of the current executable.");
             }
 
             // After the terminal process has finished, release the lock.
             is_tui_running.store(false, Ordering::SeqCst);
-            println!("TUI closed. Ready for next hotkey.");
+            log::info!("TUI closed. Ready for next hotkey.");
         } else {
-            println!("[INFO] TermLaunch is already running. Ignoring hotkey.");
+            log::info!("[INFO] TermLaunch is already running. Ignoring hotkey.");
         }
     }
 }
@@ -204,13 +221,11 @@ fn open_with_default_terminal(command_path: &str) -> std::io::Result<std::proces
 fn open_in_configured_terminal(command_path: &str) {
     let terminal_name = &CONFIG.primary_terminal.terminal;
 
-    // Dispatch to the correct function based on the configured terminal name.
-    // Using a simple if/else for now as per instructions.
     let status_result = match terminal_name.as_str() {
         "Ghostty" => open_with_ghostty(command_path),
         "Terminal" => open_with_default_terminal(command_path),
         unsupported => {
-            println!(
+            log::warn!(
                 "Unsupported terminal in config: '{}'. Falling back to default Terminal.app.",
                 unsupported
             );
@@ -220,16 +235,16 @@ fn open_in_configured_terminal(command_path: &str) {
 
     match status_result {
         Ok(status) if status.success() => {
-            println!(
+            log::info!(
                 "Successfully launched {} with TermLaunch-cli.",
                 terminal_name
             );
         }
         Ok(status) => {
-            eprintln!("{} process exited with status {}.", terminal_name, status);
+            log::error!("{} process exited with status {}.", terminal_name, status);
         }
         Err(e) => {
-            eprintln!("Failed to launch terminal '{}': {}", terminal_name, e);
+            log::error!("Failed to launch terminal '{}': {}", terminal_name, e);
         }
     }
 }
