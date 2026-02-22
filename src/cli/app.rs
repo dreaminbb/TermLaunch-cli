@@ -1,5 +1,9 @@
 use crossterm::event::KeyCode;
 
+// Removed direct APP_DIRS import here, will use `crate::config::APP_DIRS` directly
+// Removed `#[path = "../config.rs"] mod config;`
+// Removed `use config::fetch_app_dirs;`
+
 pub struct App {
     pub input: String,
     pub suggestions: Vec<Suggestion>,
@@ -82,15 +86,10 @@ impl App {
 
 fn get_applications() -> Vec<Application> {
     let mut apps = Vec::new();
-    let home_apps_path = format!("{}/Applications", env!("HOME"));
-    let app_dirs = [
-        "/Applications",
-        home_apps_path.as_str(),
-        "/System/Applications",
-        "/System/Library/CoreServices/Applications",
-    ];
+    // Use the global APP_DIRS directly
+    let app_dirs = &*crate::config::APP_DIRS;
 
-    for dir in &app_dirs {
+    for dir in app_dirs.iter() {
         if let Ok(entries) = std::fs::read_dir(dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
@@ -100,7 +99,7 @@ fn get_applications() -> Vec<Application> {
                         if let Some(path_str) = path.to_str() {
                             apps.push(Application {
                                 name: app_name.clone(),
-                                icon: "".to_string(), // Nerd Font icon for desktop
+                                icon: "󰣆".to_string(), // Nerd Font icon for desktop
                                 path: path_str.to_string(),
                             });
                         }

@@ -8,6 +8,8 @@ use once_cell::sync::Lazy; // Corrected: once_cell instead of once_call
 use serde::Deserialize; // Added: To use the [derive(Deserialize)] macro
 use std::fs;
 use std::path::PathBuf; // Corrected: PathBuf with capital letters
+use dirs; // For home_dir()
+use log; // For logging warnings
 
 // --- Constants and Static Paths ---
 
@@ -15,6 +17,24 @@ use std::path::PathBuf; // Corrected: PathBuf with capital letters
 pub const CONFIG_SUBDIR: &str = ".config/TermLaunch";
 // The name of the configuration file
 pub const CONFIG_FILE_NAME: &str = "init.toml";
+
+// Statically defined list of application directories to search
+pub static APP_DIRS: Lazy<Vec<PathBuf>> = Lazy::new(|| {
+    let mut dirs_list = vec![
+        PathBuf::from("/Applications"),
+        PathBuf::from("/System/Applications"),
+        PathBuf::from("/System/Applications/Utilities"),
+        PathBuf::from("/System/Library/CoreServices/Applications"),
+    ];
+
+    // Get the current user's home directory at runtime
+    if let Some(home_dir) = dirs::home_dir() {
+        dirs_list.push(home_dir.join("Applications"));
+    } else {
+        log::warn!("Could not determine home directory. User's Applications folder will not be searched.");
+    }
+    dirs_list
+});
 
 // Statically computes the config directory path on first use
 pub static CONFIG_DIR_PATH: Lazy<PathBuf> = Lazy::new(|| {
@@ -86,6 +106,7 @@ impl Default for Hotkey {
 #[derive(Deserialize, Debug)]
 pub struct PrimaryTerminal {
     pub terminal: String,
+    // Removed `pub path: PathBuf,`
     pub default_width: i32,
     pub default_height: i32,
     pub default_columns: i32,
@@ -96,6 +117,7 @@ impl Default for PrimaryTerminal {
     fn default() -> Self {
         Self {
             terminal: "Terminal".to_string(),
+            // Removed `path: PathBuf::from(MACOS_DEFAULT_TERMINAL_APP_PATH),`
             default_width: 300,
             default_height: 200,
             default_columns: 100,
@@ -130,13 +152,13 @@ fn load_config() -> Config {
             // If file is found, try to parse it.
             toml::from_str(&content).unwrap_or_else(|e| {
                 // If parsing fails, log the error and use default config.
-                eprintln!("Failed to parse config file: {}. Using default config.", e);
+                log::error!("Failed to parse config file: {}. Using default config.", e);
                 Config::default()
             })
         }
         Err(_) => {
             // If file is not found, use default config.
-            eprintln!("Config file not found. Using default config.");
+            log::error!("Config file not found. Using default config.");
             Config::default()
         }
     }

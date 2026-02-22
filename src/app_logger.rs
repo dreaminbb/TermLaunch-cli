@@ -1,6 +1,6 @@
 // src/cli/log.rs
 use dirs;
-use log::{LevelFilter, info, warn, error}; // Added warn, error
+use log::{LevelFilter, info}; // Removed warn, error
 use simplelog::{Config as SimplelogConfig, WriteLogger};
 use std::env;
 use std::fs::{File, create_dir_all};
