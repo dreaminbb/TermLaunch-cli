@@ -4,12 +4,12 @@
 // 2. *Provide configuration*: The statically stored configuration can be accessed by any part of the CLI process.
 
 // --- Imports ---
+use dirs; // For home_dir()
+use log;
 use once_cell::sync::Lazy; // Corrected: once_cell instead of once_call
 use serde::Deserialize; // Added: To use the [derive(Deserialize)] macro
 use std::fs;
-use std::path::PathBuf; // Corrected: PathBuf with capital letters
-use dirs; // For home_dir()
-use log; // For logging warnings
+use std::path::PathBuf; // Corrected: PathBuf with capital letters // For logging warnings
 
 // --- Constants and Static Paths ---
 
@@ -31,7 +31,9 @@ pub static APP_DIRS: Lazy<Vec<PathBuf>> = Lazy::new(|| {
     if let Some(home_dir) = dirs::home_dir() {
         dirs_list.push(home_dir.join("Applications"));
     } else {
-        log::warn!("Could not determine home directory. User's Applications folder will not be searched.");
+        log::warn!(
+            "Could not determine home directory. User's Applications folder will not be searched."
+        );
     }
     dirs_list
 });
@@ -57,6 +59,7 @@ pub struct Config {
     pub primary_terminal: PrimaryTerminal,
     pub clipboard: Clipboard,
     pub ui: Ui,
+    pub shortcut: Shortcut,
 }
 
 impl Default for Config {
@@ -66,6 +69,30 @@ impl Default for Config {
             primary_terminal: PrimaryTerminal::default(),
             clipboard: Clipboard::default(),
             ui: Ui::default(),
+            shortcut: Shortcut::default(),
+        }
+    }
+}
+
+#[derive(Deserialize, Debug)]
+pub struct Shortcut {
+    pub apps: String,
+    pub files: String,
+    pub shell: String,
+    pub clipboard: String,
+    pub select: String, // example: file searched, then press this keybind -> select UI appear
+                        // "select UI" => "open with .. finder, terminal, editor, default appdefault_mode"
+                        // Now this keybind function does't exist
+}
+
+impl Default for Shortcut {
+    fn default() -> Self {
+        Self {
+            apps: "ctrl+a".to_string(),
+            files: "ctrl+f".to_string(),
+            shell: "ctrl+c".to_string(),
+            clipboard: "ctrl+p".to_string(),
+            select: "ctrl+k".to_string(),
         }
     }
 }
@@ -75,6 +102,7 @@ impl Default for Config {
 pub struct Ui {
     pub launcher_width: u16,
     pub max_suggestions_to_display: u16,
+    pub default_mode: String,
 }
 
 impl Default for Ui {
@@ -82,6 +110,7 @@ impl Default for Ui {
         Self {
             launcher_width: 80,             // Default for TermLaunch-cli's UI
             max_suggestions_to_display: 10, // Default to show 10 suggestions
+            default_mode: "app".to_string(),
         }
     }
 }
@@ -116,7 +145,7 @@ pub struct PrimaryTerminal {
 impl Default for PrimaryTerminal {
     fn default() -> Self {
         Self {
-            terminal: "Terminal".to_string(),
+            terminal: "Ghostty".to_string(),
             // Removed `path: PathBuf::from(MACOS_DEFAULT_TERMINAL_APP_PATH),`
             default_width: 300,
             default_height: 200,
@@ -149,16 +178,30 @@ fn load_config() -> Config {
     // Accessing CONFIG_FILE_PATH here will initialize it.
     match fs::read_to_string(&**CONFIG_FILE_PATH) {
         Ok(content) => {
-            // If file is found, try to parse it.
-            toml::from_str(&content).unwrap_or_else(|e| {
-                // If parsing fails, log the error and use default config.
-                log::error!("Failed to parse config file: {}. Using default config.", e);
-                Config::default()
-            })
+            match toml::from_str(&content) {
+                Ok(config) => {
+                    println!("Parsed config: {:?}", config);
+                    config
+                }
+                Err(e) => {
+                    // If parsing fails, log the error and use default config.
+                    log::error!("Failed to parse config file: {}. Using default config.", e);
+                    println!("Error parsing config: {}", e);
+                    Config::default()
+                }
+            }
         }
-        Err(_) => {
+        Err(e) => {
             // If file is not found, use default config.
-            log::error!("Config file not found. Using default config.");
+            log::error!(
+                "Config file not found at {:?}. Using default config. Error: {}",
+                &**CONFIG_FILE_PATH,
+                e
+            );
+            println!(
+                "Config file not found at {:?}. Error: {}",
+                &**CONFIG_FILE_PATH, e
+            );
             Config::default()
         }
     }

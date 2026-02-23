@@ -1,17 +1,19 @@
 use crate::cli::app::{App, Suggestion};
-use crate::cli::theme::{BG, BORDER_ACTIVE, FG, SELECTION_BG, SELECTION_FG};
+use crate::cli::theme::{BG, FG, SELECTION_BG};
+use crate::config::CONFIG; // Import CONFIG
 use ratatui::{
     prelude::*,
     widgets::{Block, BorderType, Borders, Clear, List, ListItem, Paragraph},
 };
-use crate::config::CONFIG; // Import CONFIG
 
 pub fn ui(f: &mut Frame, app: &App) {
     let area = f.area(); // Corrected: f.size() is deprecated, use f.area()
+    let active_color = app.get_mode_color();
 
     // Define a centered area for the launcher
     let launcher_width = CONFIG.ui.launcher_width;
-    let suggestions_to_display = (app.suggestions.len() as u16).min(CONFIG.ui.max_suggestions_to_display);
+    let suggestions_to_display =
+        (app.suggestions.len() as u16).min(CONFIG.ui.max_suggestions_to_display);
     let launcher_height = 3 + suggestions_to_display; // 1 for border, 1 for input, 1 for border, + suggestions
 
     let area = centered_rect(launcher_width, launcher_height, area);
@@ -19,16 +21,25 @@ pub fn ui(f: &mut Frame, app: &App) {
     // Clear the area before drawing to handle dynamic height
     f.render_widget(Clear, area);
 
+    let mode_title = match app.current_mode {
+        crate::cli::app::AppMode::AppLauncher => " Apps ",
+        crate::cli::app::AppMode::FileSearch => " Files ",
+        crate::cli::app::AppMode::ShellExecution => " Shell ",
+        crate::cli::app::AppMode::ClipboardHistory => " Clipboard ",
+    };
+
     let main_block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(BORDER_ACTIVE))
+        .border_style(Style::default().fg(active_color))
+        .title(Span::styled(
+            mode_title,
+            Style::default().fg(active_color).add_modifier(Modifier::BOLD),
+        ))
         .style(Style::default().bg(BG));
 
     let inner_area = main_block.inner(area);
     f.render_widget(main_block, area);
-    // Rest of the code ...
-
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -37,7 +48,7 @@ pub fn ui(f: &mut Frame, app: &App) {
 
     // --- Input Line ---
     let input_line = Line::from(vec![
-        Span::styled("❯ ", Style::default().fg(BORDER_ACTIVE)),
+        Span::styled("❯ ", Style::default().fg(active_color)),
         Span::styled(app.input.as_str(), Style::default().fg(FG)),
     ]);
     let input_paragraph = Paragraph::new(input_line);
@@ -49,15 +60,16 @@ pub fn ui(f: &mut Frame, app: &App) {
         .iter()
         .enumerate()
         .map(|(i, suggestion)| {
-            // Corrected: Ensure both match arms return the same type (&str, &str)
-            let (icon, text): (&str, &str) = match suggestion {
-                Suggestion::App(app) => (app.icon.as_str(), app.name.as_str()),
-                Suggestion::Calc(res) => ("", res.as_str()),
+            let (icon, text): (&str, String) = match suggestion {
+                Suggestion::App(app) => (app.icon.as_str(), app.name.clone()),
+                Suggestion::File(path) => ("󰈔", path.clone()),
+                Suggestion::Shell(cmd) => ("", cmd.clone()),
+                Suggestion::Clipboard(content) => ("󱘪", content.clone()),
+                Suggestion::Calc(res) => ("", res.clone()),
             };
 
             let content = Line::from(vec![
-                Span::styled(format!("{} ", icon), Style::default().fg(SELECTION_FG)),
-                // Corrected: `text` is now a `&str`, no clone needed.
+                Span::styled(format!("{} ", icon), Style::default().fg(active_color)),
                 Span::raw(text),
             ]);
 

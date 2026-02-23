@@ -15,6 +15,12 @@ pub fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut App)
         terminal.draw(|f| ui(f, app))?;
 
         if let Event::Key(key) = event::read()? {
+            if key.kind != event::KeyEventKind::Press {
+                continue;
+            }
+            if app.change_mode(key) {
+                continue;
+            }
             match key.code {
                 // I thought quit qpp with q key is good idea.
                 // But in case there is a program name start with q, you can't open it

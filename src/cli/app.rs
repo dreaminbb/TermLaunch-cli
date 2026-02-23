@@ -1,18 +1,31 @@
-use crossterm::event::KeyCode;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ratatui::style::Color;
 
 // Removed direct APP_DIRS import here, will use `crate::config::APP_DIRS` directly
 // Removed `#[path = "../config.rs"] mod config;`
 // Removed `use config::fetch_app_dirs;`
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AppMode {
+    AppLauncher,
+    FileSearch,
+    ShellExecution,
+    ClipboardHistory,
+}
+
 pub struct App {
     pub input: String,
     pub suggestions: Vec<Suggestion>,
     pub selected_index: usize,
+    pub current_mode: AppMode,
 }
 
 #[derive(Clone)]
 pub enum Suggestion {
     App(Application),
+    File(String),
+    Shell(String),
+    Clipboard(String),
     Calc(String),
 }
 
@@ -25,10 +38,27 @@ pub struct Application {
 
 impl App {
     pub fn new() -> App {
+        let default_mode = match crate::config::CONFIG.ui.default_mode.as_str() {
+            "file" => AppMode::FileSearch,
+            "shell" => AppMode::ShellExecution,
+            "clipboard" => AppMode::ClipboardHistory,
+            _ => AppMode::AppLauncher,
+        };
+
         App {
             input: String::new(),
             suggestions: Vec::new(),
             selected_index: 0,
+            current_mode: default_mode,
+        }
+    }
+
+    pub fn get_mode_color(&self) -> Color {
+        match self.current_mode {
+            AppMode::AppLauncher => Color::Rgb(0x95, 0x7f, 0xb8), // oniViolet
+            AppMode::FileSearch => Color::Rgb(0x76, 0x94, 0x6a),  // autumnGreen
+            AppMode::ShellExecution => Color::Rgb(0xc3, 0x40, 0x43), // autumnRed
+            AppMode::ClipboardHistory => Color::Rgb(0xc0, 0xa3, 0x6e), // carpYellow
         }
     }
 
@@ -57,30 +87,116 @@ impl App {
         }
     }
 
+    fn is_shortcut(event: KeyEvent, shortcut_str: &str) -> bool {
+        let parts: Vec<&str> = shortcut_str.split('+').collect();
+        if parts.len() != 2 {
+            return false;
+        }
+
+        let modifier = match parts[0].to_lowercase().as_str() {
+            "ctrl" => KeyModifiers::CONTROL,
+            "alt" => KeyModifiers::ALT,
+            "shift" => KeyModifiers::SHIFT,
+            _ => return false,
+        };
+
+        let key_code = if parts[1].len() == 1 {
+            KeyCode::Char(parts[1].chars().next().unwrap().to_ascii_lowercase())
+        } else {
+            return false;
+        };
+
+        // Normalize character case for comparison
+        let normalized_event_code = match event.code {
+            KeyCode::Char(c) => KeyCode::Char(c.to_ascii_lowercase()),
+            other => other,
+        };
+
+        event.modifiers.contains(modifier) && normalized_event_code == key_code
+    }
+
+    pub fn change_mode(&mut self, event: KeyEvent) -> bool {
+        let shortcuts = &crate::config::CONFIG.shortcut;
+        println!("Shortcuts loaded: apps={}, files={}, shell={}, clipboard={}, select={}", 
+                 shortcuts.apps, shortcuts.files, shortcuts.shell, shortcuts.clipboard, shortcuts.select);
+        println!("Key event: {:?}", event);
+
+        let new_mode = if Self::is_shortcut(event, &shortcuts.apps) {
+            Some(AppMode::AppLauncher)
+        } else if Self::is_shortcut(event, &shortcuts.files) {
+            Some(AppMode::FileSearch)
+        } else if Self::is_shortcut(event, &shortcuts.shell) {
+            Some(AppMode::ShellExecution)
+        } else if Self::is_shortcut(event, &shortcuts.clipboard) {
+            Some(AppMode::ClipboardHistory)
+        } else {
+            None
+        };
+
+        if let Some(mode) = new_mode {
+            self.current_mode = mode;
+            self.input.clear();
+            self.update_suggestions();
+            return true;
+        }
+        false
+    }
+
     pub fn update_suggestions(&mut self) {
         self.suggestions.clear();
-        if self.input.is_empty() {
-            self.selected_index = 0;
-            return;
+        self.selected_index = 0;
+
+        match self.current_mode {
+            AppMode::AppLauncher => self.update_app_suggestions(),
+            AppMode::FileSearch => self.update_file_suggestions(),
+            AppMode::ShellExecution => self.update_shell_suggestions(),
+            AppMode::ClipboardHistory => self.update_clipboard_suggestions(),
         }
 
-        let apps = get_applications();
-        for app in apps {
-            if app.name.to_lowercase().contains(&self.input.to_lowercase()) {
-                self.suggestions.push(Suggestion::App(app));
-            }
-        }
-
-        // Only add calculation if there are no app suggestions
-        if self.suggestions.is_empty() {
+        // Calculation is a global fallback or secondary feature
+        if self.suggestions.is_empty() && !self.input.is_empty() {
             if let Ok(result) = meval::eval_str(&self.input) {
                 if result.is_finite() {
                     self.suggestions.push(Suggestion::Calc(result.to_string()));
                 }
             }
         }
+    }
 
-        self.selected_index = 0;
+    fn update_app_suggestions(&mut self) {
+        if self.input.is_empty() {
+            return;
+        }
+        let apps = get_applications();
+        for app in apps {
+            if app.name.to_lowercase().contains(&self.input.to_lowercase()) {
+                self.suggestions.push(Suggestion::App(app));
+            }
+        }
+    }
+
+    fn update_file_suggestions(&mut self) {
+        if self.input.is_empty() {
+            return;
+        }
+        // Placeholder: File search logic will go here
+        self.suggestions
+            .push(Suggestion::File(format!("Search file: {}", self.input)));
+    }
+
+    fn update_shell_suggestions(&mut self) {
+        if self.input.is_empty() {
+            return;
+        }
+        // Placeholder: Shell command logic will go here
+        self.suggestions
+            .push(Suggestion::Shell(format!("Run: {}", self.input)));
+    }
+
+    fn update_clipboard_suggestions(&mut self) {
+        // Placeholder: Clipboard history logic will go here
+        self.suggestions
+            .push(Suggestion::Clipboard("Last copied text...".to_string()));
     }
 }
 
