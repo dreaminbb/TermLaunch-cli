@@ -155,9 +155,11 @@ fn open_with_ghostty(command_path: &str) -> std::io::Result<std::process::ExitSt
     let terminal_columns = CONFIG.primary_terminal.default_columns;
     let terminal_rows = CONFIG.primary_terminal.default_rows;
 
-    let pos_x = (screen_width - terminal_width) / 2.0;
-    let pos_y = (screen_height - terminal_height) / 2.0;
+    let pos_x = (screen_width - terminal_width) / 2.5;
+    let pos_y = (screen_height - terminal_height) / 2.5;
 
+    // If you use yabai wm, you should add this config to avoid changing windows size
+    // yabai -m rule --add app="^Ghostty$" title="TermLaunch" manage=off
     Command::new("open")
         .arg("-a")
         .arg("Ghostty")
@@ -167,6 +169,7 @@ fn open_with_ghostty(command_path: &str) -> std::io::Result<std::process::ExitSt
         .arg(format!("--window-position-y={}", pos_y as i32))
         .arg(format!("--window-width={}", terminal_columns))
         .arg(format!("--window-height={}", terminal_rows))
+        .arg("--title=TermLaunch")
         .arg("-e") // Tell Ghostty to execute a shell
         .arg("sh")
         .arg("-c")
