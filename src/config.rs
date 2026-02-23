@@ -81,7 +81,7 @@ pub struct Shortcut {
     pub shell: String,
     pub clipboard: String,
     pub select: String, // example: file searched, then press this keybind -> select UI appear
-                        // "select UI" => "open with .. finder, terminal, editor, default appdefault_mode"
+                        // "select UI" => "open with .. finder, terminal, editor, default app"
                         // Now this keybind function does't exist
 }
 
@@ -178,15 +178,29 @@ fn load_config() -> Config {
     // Accessing CONFIG_FILE_PATH here will initialize it.
     match fs::read_to_string(&**CONFIG_FILE_PATH) {
         Ok(content) => {
+            #[cfg(debug_assertions)]
+            println!("\n========== CONFIG LOADED ==========");
+            #[cfg(debug_assertions)]
+            println!("File Content:\n{}", content);
+
+            // If file is found, try to parse it.
             match toml::from_str(&content) {
                 Ok(config) => {
-                    println!("Parsed config: {:?}", config);
+                    #[cfg(debug_assertions)]
+                    println!(
+                        "\n--- Parsed Configuration ---\n{:#?}\n================================\n",
+                        config
+                    );
                     config
                 }
                 Err(e) => {
                     // If parsing fails, log the error and use default config.
                     log::error!("Failed to parse config file: {}. Using default config.", e);
-                    println!("Error parsing config: {}", e);
+                    #[cfg(debug_assertions)]
+                    println!(
+                        "\n[ERROR] Failed to parse config: {}\nUsing default config.\n",
+                        e
+                    );
                     Config::default()
                 }
             }
@@ -198,8 +212,9 @@ fn load_config() -> Config {
                 &**CONFIG_FILE_PATH,
                 e
             );
+            #[cfg(debug_assertions)]
             println!(
-                "Config file not found at {:?}. Error: {}",
+                "\n[WARNING] Config file not found at:\n{:?}\nError: {}\nUsing default config.\n",
                 &**CONFIG_FILE_PATH, e
             );
             Config::default()

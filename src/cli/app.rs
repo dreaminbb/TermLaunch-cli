@@ -117,17 +117,22 @@ impl App {
 
     pub fn change_mode(&mut self, event: KeyEvent) -> bool {
         let shortcuts = &crate::config::CONFIG.shortcut;
-        println!("Shortcuts loaded: apps={}, files={}, shell={}, clipboard={}, select={}", 
-                 shortcuts.apps, shortcuts.files, shortcuts.shell, shortcuts.clipboard, shortcuts.select);
-        println!("Key event: {:?}", event);
 
         let new_mode = if Self::is_shortcut(event, &shortcuts.apps) {
+            #[cfg(debug_assertions)]
+            println!("→ Mode changed to: AppLauncher\n");
             Some(AppMode::AppLauncher)
         } else if Self::is_shortcut(event, &shortcuts.files) {
+            #[cfg(debug_assertions)]
+            println!("→ Mode changed to: FileSearch\n");
             Some(AppMode::FileSearch)
         } else if Self::is_shortcut(event, &shortcuts.shell) {
+            #[cfg(debug_assertions)]
+            println!("→ Mode changed to: ShellExecution\n");
             Some(AppMode::ShellExecution)
         } else if Self::is_shortcut(event, &shortcuts.clipboard) {
+            #[cfg(debug_assertions)]
+            println!("→ Mode changed to: ClipboardHistory\n");
             Some(AppMode::ClipboardHistory)
         } else {
             None
